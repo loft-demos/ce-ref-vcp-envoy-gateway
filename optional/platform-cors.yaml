@@ -1,0 +1,30 @@
+# Only needed if a browser page on another origin calls the vCluster Platform
+# API, for example a status or wake page served on a tenant cluster's
+# hostname. vCluster Platform sets no CORS headers of its own and strips any it
+# receives from backends, so the edge is the only place they can come from.
+#
+# Envoy answers preflights from allowed origins itself. Other origins get no
+# Access-Control-Allow-Origin header and the browser blocks the response.
+# Clients that send no Origin header (kubectl, private nodes) are unaffected.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: vcluster-platform-cors
+  namespace: vcluster-platform
+spec:
+  # Attach to the Platform route only. A route-level SecurityPolicy replaces a
+  # Gateway-level one, and at Gateway level CORS would apply to every route.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: vcluster-platform
+  cors:
+    # Strings, not regexes. A wildcard covers one leading label, and the scheme
+    # is required.
+    allowOrigins:
+      - "https://*.apps.example.com"
+    allowMethods: [GET, OPTIONS]
+    allowHeaders: [Authorization, Content-Type]
+    maxAge: 86400s
+    # Leave allowCredentials unset when the page sends a bearer token in a
+    # header rather than cookies.

@@ -1,0 +1,22 @@
+# HTTP/1.1 upgrade types vCluster Platform needs. Envoy accepts an upgrade only
+# if its type is on an allowlist, and Envoy Gateway's default list is websocket
+# alone: any other Upgrade gets a local 403 with response details
+# upgrade_failed. This list replaces the default, so websocket is listed too.
+#
+# Do not add requestBuffer to this policy: when it is set, Envoy Gateway
+# ignores the upgrade configuration.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: vcluster-platform-upgrades
+  namespace: vcluster-platform
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: vcluster-platform
+  httpUpgrade:
+    - type: websocket                    # UI; kubectl exec/attach on newer clients
+    - type: spdy/3.1                     # kubectl exec/port-forward on older clients
+    - type: tailscale-control-protocol   # private nodes registering: POST /ts2021
+    - type: DERP                         # private nodes' DERP relay: GET /derp

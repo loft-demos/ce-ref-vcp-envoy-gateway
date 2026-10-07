@@ -1,0 +1,15 @@
+# vCluster Platform Helm values for running behind this Gateway.
+#
+#   helm upgrade --install vcluster-platform vcluster-platform \
+#     --repo https://charts.loft.sh --namespace vcluster-platform \
+#     --create-namespace -f values/vcluster-platform.yaml
+
+# The Gateway replaces the chart's ingress.
+ingress:
+  enabled: false
+
+config:
+  # Must match the hostname on the Gateway listeners and routes. vCluster
+  # Platform serves the UI, API, Tailscale coordinator, and DERP on this one
+  # hostname.
+  loftHost: platform.example.com

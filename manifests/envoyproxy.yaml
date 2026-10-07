@@ -1,0 +1,39 @@
+# Shape of the Envoy data plane behind the Gateway: two replicas spread across
+# nodes, exposed by a LoadBalancer Service.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: platform-edge
+  namespace: envoy-gateway-system
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: 2
+        # If you make the anti-affinity below "required" and have exactly as
+        # many eligible nodes as replicas, the default rollout (maxSurge 25%,
+        # rounding up to 1) can never schedule its surge pod, and every Envoy
+        # upgrade stalls. In that case use maxSurge: 0, maxUnavailable: 1.
+        strategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 0
+        pod:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/component: proxy
+                        gateway.envoyproxy.io/owning-gateway-name: platform-edge
+                        gateway.envoyproxy.io/owning-gateway-namespace: envoy-gateway-system
+      envoyService:
+        type: LoadBalancer
+        # Add your load balancer's annotations here, for example a fixed
+        # address (metallb.io/loadBalancerIPs) or a cloud LB type.
+        annotations: {}

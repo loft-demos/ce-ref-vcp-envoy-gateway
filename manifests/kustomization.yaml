@@ -1,0 +1,14 @@
+# kubectl apply -k manifests/
+#
+# Replace platform.example.com with your vCluster Platform hostname (the
+# chart's config.loftHost) and the ClusterIssuer name in certificate.yaml
+# before applying. See the README.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gatewayclass.yaml
+  - envoyproxy.yaml
+  - certificate.yaml
+  - gateway.yaml
+  - platform-routes.yaml
+  - platform-upgrades.yaml

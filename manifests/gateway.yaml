@@ -1,0 +1,43 @@
+# The edge for vCluster Platform. Port 80 only redirects; port 443 terminates
+# TLS and routes to vCluster Platform.
+#
+# Routes may attach only from the vCluster Platform namespace. To serve other
+# hostnames (tenant cluster apps, admin tools) from the same Gateway, add
+# listeners for them; see "Sharing the Gateway" in the README.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: platform-edge
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: eg
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: platform-edge
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: platform.example.com
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: vcluster-platform
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: platform.example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: platform-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: vcluster-platform

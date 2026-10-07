@@ -1,0 +1,19 @@
+# TLS for the vCluster Platform hostname, terminated by Envoy. Envoy Gateway
+# hot-reloads the Secret when cert-manager renews it; nothing restarts.
+#
+# Set issuerRef to your ClusterIssuer. If your edge has no public address (for
+# example public DNS pointing at a private IP), use a DNS-01 solver; HTTP-01
+# cannot reach it. Not using cert-manager? Delete this file and create a
+# kubernetes.io/tls Secret named platform-tls in envoy-gateway-system.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-tls
+  namespace: envoy-gateway-system
+spec:
+  secretName: platform-tls
+  issuerRef:
+    name: letsencrypt
+    kind: ClusterIssuer
+  dnsNames:
+    - platform.example.com
