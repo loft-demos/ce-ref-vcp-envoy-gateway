@@ -1,11 +1,11 @@
 # ce-ref-vcp-envoy-gateway
 
 Expose vCluster Platform through [Envoy Gateway](https://gateway.envoyproxy.io/)
-with the Kubernetes Gateway API, including tenant clusters that use **private
-nodes**.
+with the Kubernetes Gateway API, including **connected clusters** with network
+peering and tenant clusters with **private nodes**.
 
-An ordinary HTTPRoute gets you the vCluster Platform UI and API. Private nodes
-fail to join unless you also allow the HTTP upgrade types they use, because
+An ordinary HTTPRoute gets you the vCluster Platform UI and API. Connected
+clusters and private nodes fail to connect unless you also allow the HTTP upgrade types they use, because
 Envoy Gateway accepts only `websocket` by default. This repo has the complete
 set of objects: one route, one upgrade policy, and optional CORS, with TLS
 terminated once at Envoy.
@@ -48,16 +48,23 @@ hack/
 ## Why the upgrade policy matters
 
 vCluster Platform serves everything on one hostname (`config.loftHost`): the
-UI, the API, the Kubernetes proxy to tenant clusters, and, for private nodes,
-an embedded Tailscale coordinator and DERP relay. Several of those switch
-protocols with an HTTP/1.1 `Upgrade`:
+UI, the API, the Kubernetes proxy to tenant clusters, and an embedded Tailscale
+coordinator and DERP relay. Two kinds of clients join that Tailscale network
+through the same hostname:
+
+- **Connected clusters with network peering** (`networkPeer: true` on the
+  `Cluster`): the vCluster Platform agent on each one runs its own Tailscale
+  node, with `<loftHost>/coordinator/` as its control URL.
+- **Private nodes** of tenant clusters.
+
+Several of these paths switch protocols with an HTTP/1.1 `Upgrade`:
 
 | Upgrade type | Used by |
 | --- | --- |
 | `websocket` | UI; `kubectl exec`/`attach` on newer clients; DERP from websocket-built Tailscale clients |
 | `spdy/3.1` | `kubectl exec`/`port-forward` on older clients |
-| `tailscale-control-protocol` | Private nodes registering: `POST /ts2021` (also served at `/coordinator/ts2021`) |
-| `DERP` | Private nodes' DERP relay from standard Tailscale clients: `GET /derp` |
+| `tailscale-control-protocol` | Connected-cluster agents and private nodes registering: `POST /ts2021` (also served at `/coordinator/ts2021`) |
+| `DERP` | The DERP relay for agents and private nodes on standard Tailscale clients: `GET /derp` |
 
 Envoy accepts an upgrade only if its type is on an allowlist, and Envoy
 Gateway's default list is `websocket` alone. Anything else gets a local `403`
@@ -65,6 +72,8 @@ from Envoy, with `upgrade_failed` in the access log, and never reaches vCluster
 Platform. The symptoms:
 
 - Private nodes stay logged out (`NeedsLogin`) and never get a Tailscale IP.
+- Connected clusters with network peering can't establish their tunnel to
+  vCluster Platform.
 - `GET /derp/probe` and `GET /coordinator/key` succeed (they're plain requests),
   so the edge looks healthy.
 
@@ -106,8 +115,8 @@ ClusterIssuer:
 - **No cert-manager:** delete `certificate.yaml` and create a
   `kubernetes.io/tls` Secret named `platform-tls` in `envoy-gateway-system`.
 
-Private nodes have to trust this certificate, so use a public CA unless you
-distribute a private one to them.
+Connected-cluster agents and private nodes have to trust this certificate, so
+use a public CA unless you distribute a private one to them.
 
 In `manifests/envoyproxy.yaml`, add any annotations your load balancer needs,
 for example a fixed address.
@@ -157,9 +166,9 @@ port 80 redirects, and every upgrade type reaches vCluster Platform:
 
 Add `CORS_ORIGIN=https://...` to also check the optional CORS policy.
 
-For a live picture of private-node sessions, read Envoy's upgrade gauge.
+For a live picture of agent and private-node sessions, read Envoy's upgrade gauge.
 Upgraded connections appear in the access log only when they close, so a
-healthy node is otherwise invisible there:
+healthy agent or node is otherwise invisible there:
 
 ```sh
 kubectl -n envoy-gateway-system port-forward <envoy-pod> 19000:19000 &
@@ -181,7 +190,7 @@ Edit the origins in `optional/platform-cors.yaml`, then
 - **Allowed requests:** Envoy echoes the origin in
   `Access-Control-Allow-Origin`.
 - **Other origins:** no allow header, so the browser blocks the response.
-- **Clients without an `Origin` header** (kubectl, private nodes): unaffected.
+- **Clients without an `Origin` header** (kubectl, agents, private nodes): unaffected.
 
 Rules for the policy:
 
@@ -273,7 +282,7 @@ its route, but not both.
 
 | Symptom | Cause |
 | --- | --- |
-| Private nodes stuck in `NeedsLogin`; Envoy log shows `POST /ts2021 403 upgrade_failed` on `:443` | Upgrade policy missing, not Accepted, or targeting the wrong route |
+| Private nodes stuck in `NeedsLogin`, or a network-peered connected cluster can't connect; Envoy log shows `POST /ts2021 403 upgrade_failed` on `:443` | Upgrade policy missing, not Accepted, or targeting the wrong route |
 | `POST /ts2021 403 upgrade_failed` with `:authority <host>:80` | Expected. The Tailscale client tries ports 80 and 443 at once; the port 80 attempt hits the redirect route and loses |
 | `GET /derp` gets `403` | `DERP` missing from the upgrade list |
 | Watches or `kubectl logs -f` through vCluster Platform drop after 15s | `timeouts.request: 0s` missing on the route |
@@ -286,7 +295,7 @@ its route, but not both.
 The same requirements apply to any edge in front of vCluster Platform:
 
 - HTTP/1.1 upgrades: `websocket` and `spdy/3.1`, plus `tailscale-control-protocol`
-  and `DERP` with private nodes
+  and `DERP` for network-peered connected clusters or private nodes
 - no short request timeout or response buffering
 - `Host` and `X-Forwarded-Proto: https` forwarded
 - no small request-body limit
